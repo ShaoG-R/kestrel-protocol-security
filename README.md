@@ -1,4 +1,4 @@
-# Security - Token 重放防护库
+# KestrelProtocolSecurity - Token 重放防护库
 
 基于 HMAC-SHA256 的 Token 机制和重放攻击防护系统，专为 0-RTT 网络协议设计。
 
@@ -23,7 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 ### 基本使用
 
 ```rust
-use security::{TokenGenerator, TokenValidator, ReplayDetector};
+use kestrel_protocol_security::{TokenGenerator, TokenValidator, ReplayDetector};
 use serde::{Serialize, Deserialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
