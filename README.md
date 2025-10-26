@@ -17,15 +17,24 @@
 ```toml
 [dependencies]
 security = { path = "." }
+serde = { version = "1.0", features = ["derive"] }
 ```
 
 ### 基本使用
 
 ```rust
-use security::{TokenGenerator, TokenValidator, ReplayDetector, ConnectionParams};
+use security::{TokenGenerator, TokenValidator, ReplayDetector};
+use serde::{Serialize, Deserialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-// 1. 服务端初始化
+// 1. 定义您自己的连接参数（必须实现 Serialize + Deserialize + Clone）
+#[derive(Clone, Serialize, Deserialize)]
+struct ConnectionParams {
+    max_packet_size: u32,
+    timeout_ms: u32,
+}
+
+// 2. 服务端初始化
 let secret_key = b"your_secret_key_should_be_random".to_vec();
 let params = ConnectionParams {
     max_packet_size: 1350,
@@ -34,16 +43,16 @@ let params = ConnectionParams {
 
 let generator = TokenGenerator::new(secret_key.clone(), params);
 
-// 2. 生成 Token（首次连接时）
+// 3. 生成 Token（首次连接时）
 let client_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 8080);
 let token = generator.generate(client_addr);
 
-// 3. 序列化 Token 用于网络传输
+// 4. 序列化 Token 用于网络传输
 let token_bytes = bincode::encode_to_vec(&token, bincode::config::standard()).unwrap();
 
-// 4. 客户端接收 Token 并在后续请求中携带
+// 5. 客户端接收 Token 并在后续请求中携带
 
-// 5. 服务端验证 Token（0-RTT 连接时）
+// 6. 服务端验证 Token（0-RTT 连接时）
 let detector = ReplayDetector::new(3600, 1000); // 1小时窗口，缓存1000个
 let mut validator = TokenValidator::new(secret_key, detector);
 
@@ -55,28 +64,40 @@ match validator.validate(&token, client_addr) {
 
 ## 核心组件
 
-### 1. Token 结构
+### 1. Token 结构（泛型）
 
 ```rust
-pub struct Token {
+pub struct Token<P>
+where
+    P: Serialize + Deserialize + Clone,
+{
     pub client_addr_hash: u64,     // 客户端地址指纹
     pub issued_at: u64,            // 发行时间戳（Unix时间，秒）
     pub expires_in: u32,           // 过期时间（秒）
-    pub connection_params: ConnectionParams,  // 连接参数快照
+    pub connection_params: P,      // 连接参数快照（自定义类型）
     pub signature: [u8; 32],       // HMAC-SHA256 签名
 }
 ```
 
-### 2. TokenGenerator - Token 生成器
+**注意**：`Token` 是泛型结构，`P` 是您自定义的连接参数类型，只需实现 `Serialize + Deserialize + Clone`。
+
+### 2. TokenGenerator - Token 生成器（泛型）
 
 负责生成带有 HMAC-SHA256 签名的安全 Token。
 
 ```rust
-let generator = TokenGenerator::new(secret_key, connection_params);
+// 定义您的连接参数类型
+#[derive(Clone, Serialize, Deserialize)]
+struct MyParams {
+    buffer_size: usize,
+    protocol_version: u8,
+}
+
+let generator = TokenGenerator::new(secret_key, my_params);
 let token = generator.generate(client_addr);
 ```
 
-### 3. TokenValidator - Token 验证器
+### 3. TokenValidator - Token 验证器（泛型）
 
 执行完整的多层验证流程：
 
@@ -86,7 +107,8 @@ let token = generator.generate(client_addr);
 4. **重放检测**: 使用 ReplayDetector 检测重放攻击
 
 ```rust
-let mut validator = TokenValidator::new(secret_key, replay_detector);
+// 验证器的泛型类型必须与生成器一致
+let mut validator: TokenValidator<MyParams> = TokenValidator::new(secret_key, replay_detector);
 validator.validate(&token, client_addr)?;
 ```
 
@@ -215,6 +237,50 @@ let detector = ReplayDetector::new(
 );
 ```
 
+## 自定义连接参数
+
+库不提供默认的 `ConnectionParams`，您需要根据自己的需求定义。连接参数类型必须实现：
+- `Serialize` - 用于序列化
+- `Deserialize` - 用于反序列化  
+- `Clone` - 用于克隆
+
+### 示例 1: 简单参数
+
+```rust
+#[derive(Clone, Serialize, Deserialize)]
+struct SimpleParams {
+    max_packet_size: u32,
+}
+```
+
+### 示例 2: 复杂参数
+
+```rust
+#[derive(Clone, Serialize, Deserialize)]
+struct AdvancedParams {
+    buffer_size: usize,
+    protocol_version: u8,
+    features: Vec<String>,
+    encryption_enabled: bool,
+}
+```
+
+### 示例 3: 嵌套参数
+
+```rust
+#[derive(Clone, Serialize, Deserialize)]
+struct NetworkConfig {
+    mtu: u32,
+    timeout_ms: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ComplexParams {
+    network: NetworkConfig,
+    user_id: String,
+}
+```
+
 ## 0-RTT 协议集成
 
 ### 典型流程
@@ -240,19 +306,30 @@ let detector = ReplayDetector::new(
 ### 接口设计
 
 ```rust
+use serde::{Serialize, Deserialize};
+
+// 定义您的连接参数
+#[derive(Clone, Serialize, Deserialize)]
+struct MyConnectionParams {
+    // ... 您的字段
+}
+
 // 服务端接口
-pub trait ZeroRTTServer {
-    fn handle_first_connection(&mut self, addr: SocketAddr) -> Token;
-    fn handle_zero_rtt_connection(&mut self, token: &Token, addr: SocketAddr) -> Result<(), TokenError>;
+pub trait ZeroRTTServer<P>
+where
+    P: Serialize + for<'de> Deserialize<'de> + Clone,
+{
+    fn handle_first_connection(&mut self, addr: SocketAddr) -> Token<P>;
+    fn handle_zero_rtt_connection(&mut self, token: &Token<P>, addr: SocketAddr) -> Result<(), TokenError>;
 }
 
 // 实现示例
-impl ZeroRTTServer for MyServer {
-    fn handle_first_connection(&mut self, addr: SocketAddr) -> Token {
+impl ZeroRTTServer<MyConnectionParams> for MyServer {
+    fn handle_first_connection(&mut self, addr: SocketAddr) -> Token<MyConnectionParams> {
         self.token_generator.generate(addr)
     }
 
-    fn handle_zero_rtt_connection(&mut self, token: &Token, addr: SocketAddr) -> Result<(), TokenError> {
+    fn handle_zero_rtt_connection(&mut self, token: &Token<MyConnectionParams>, addr: SocketAddr) -> Result<(), TokenError> {
         self.token_validator.validate(token, addr)
     }
 }
