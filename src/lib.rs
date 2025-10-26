@@ -12,7 +12,7 @@
 //! ## 使用示例
 //!
 //! ```rust
-//! use security::{TokenGenerator, TokenValidator, ReplayDetector};
+//! use kestrel_protocol_security::{TokenGenerator, TokenValidator, ReplayDetector};
 //! use serde::{Serialize, Deserialize};
 //! use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 //!

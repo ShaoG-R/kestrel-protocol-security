@@ -13,7 +13,7 @@ type HmacSha256 = Hmac<Sha256>;
 ///
 /// # 示例
 /// ```
-/// use security::TokenGenerator;
+/// use kestrel_protocol_security::TokenGenerator;
 /// use serde::{Serialize, Deserialize};
 /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 ///

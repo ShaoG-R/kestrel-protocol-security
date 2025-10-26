@@ -4,7 +4,7 @@
 //!
 //! 运行: cargo run --example zero_rtt_demo
 
-use security::{ReplayDetector, Token, TokenGenerator, TokenValidator};
+use kestrel_protocol_security::{ReplayDetector, Token, TokenGenerator, TokenValidator};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

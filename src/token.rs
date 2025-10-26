@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// # 示例
 /// ```
 /// use serde::{Serialize, Deserialize};
-/// use security::Token;
+/// use kestrel_protocol_security::Token;
 ///
 /// #[derive(Clone, Serialize, Deserialize)]
 /// struct MyConnectionParams {
